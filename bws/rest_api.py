@@ -132,7 +132,8 @@ class ModelWebServiceMixin():
                     calcs = Predictions(pedi, mutation_frequency=this_mutation_frequency,
                                         mutation_sensitivity=mutation_sensitivity, cancer_rates=cancer_rates,
                                         risk_factor_code=risk_factor_code, prs=prs,
-                                        cwd=cwd, request=request, model_settings=model_settings)
+                                        cwd=cwd, request=request, model_settings=model_settings,
+                                        population=this_population)
                     # Add input parameters and calculated results as attributes to 'this_pedigree'
                     this_pedigree["mutation_frequency"] = {this_population: this_mutation_frequency}
                     self.add_attr("version", output, calcs, output)

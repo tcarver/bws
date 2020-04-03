@@ -248,7 +248,8 @@ class Predictions(object):
                  mutation_sensitivity=settings.BC_MODEL['GENETIC_TEST_SENSITIVITY'],
                  cancer_rates=settings.BC_MODEL['CANCER_RATES'].get("UK"),
                  risk_factor_code=0, prs=None, cwd=None, request=Request(HttpRequest()),
-                 run_risks=True, model_settings=settings.BC_MODEL, calcs=None):
+                 run_risks=True, model_settings=settings.BC_MODEL, calcs=None,
+                 population="UK"):
         """
         Run cancer risk and mutation probability prediction calculations.
         @param pedi: L{Pedigree} used in prediction calculations
@@ -273,6 +274,7 @@ class Predictions(object):
         self.prs = prs
         self.model_settings = model_settings
         self.calcs = self.model_settings['CALCS'] if calcs is None else calcs
+        self.population = population
 
         # check calculations are in the allowed list of calculations
         for c in self.calcs:
@@ -297,6 +299,11 @@ class Predictions(object):
         ''' Run risk and mutation probability calculations '''
         self.niceness = Predictions._get_niceness(self.pedi)
         start = time.time()
+
+        if self.population == 'Custom':
+            self.cancer_rates = Predictions.set_custom_mut_freq(self.model_settings, self.cancer_rates,
+                                                                self.mutation_frequency)
+            tmpf = self.cancer_rates   # temporary incidence rates file
 
         # mutation probability calculation
         if self.pedi.is_carrier_probs_viable() and self.is_calculate('carrier_probs'):
@@ -333,6 +340,9 @@ class Predictions(object):
                 if self.ten_yr_cancer_risk is not None:
                     self.baseline_ten_yr_cancer_risk, _v = RangeRiskBaseline(self, 40, 50,
                                                                              "10YR RANGE BASELINE").get_risk()
+
+        if self.population == 'Custom':
+            os.remove(tmpf)  # remove temporary incidence file
 
         if not isinstance(self.request.user, AnonymousUser):
             u = User.objects.get(username=self.request.user)
@@ -373,6 +383,32 @@ class Predictions(object):
         return niceness
 
     @classmethod
+    def set_custom_mut_freq(cls, model, cancer_rates, mutation_freq):
+        ''' Create incidence file for custom mutation frequencies, injecting the frequencies into a copy of the
+        incidence rates file for a population/country. '''
+        crates_path = os.path.join(model['HOME'], "Data/incidence_rates_" + cancer_rates + ".nml")
+        _o, temp_path = tempfile.mkstemp(suffix=".nml", prefix="incidence_rates_" + cancer_rates + ".nml", text=True)
+        with open(crates_path, "r") as inf:
+            with open(temp_path, 'w') as of:
+                for line in inf:
+                    lc = line.lower()
+                    if "&incidence_rates" in lc:
+                        of.write(line)
+                        of.write("\n! The popuation allele frequencies\n")
+
+                        genes = model['GENES']
+                        aname = "BOADICEA_Allele_Frq" if model['NAME'] == "BC" else "Ovarian_Allele_Frq"
+                        for idx, gene in enumerate(genes):
+                            of.write(aname+"( "+str(idx+1)+" ) = "+str(mutation_freq[gene])+"\n")
+                        of.write("\n")
+                    elif "_allele_frq" not in lc:
+                        of.write(line)
+        of.close()
+        inf.close()
+        logger.debug(temp_path)
+        return temp_path
+
+    @classmethod
     def run(cls, request, process_type, bat_file, cancer_rates="UK", cwd="/tmp", niceness=0, name="",
             model=settings.BC_MODEL):
         """
@@ -394,6 +430,13 @@ class Predictions(object):
 
         start = time.time()
         try:
+
+            if not os.path.isfile(cancer_rates):
+                this_cancer_rates = os.path.join(model['HOME'], "Data/incidence_rates_" + cancer_rates + ".nml")
+            else:
+                this_cancer_rates = cancer_rates
+                logger.debug(this_cancer_rates)
+
             try:
                 os.remove(os.path.join(cwd, out+".out"))  # ensure output file doesn't exist
             except OSError:
@@ -406,7 +449,7 @@ class Predictions(object):
                  '-r', out+".out",       # results file
                  '-v',                   # include model version
                  bat_file,
-                 os.path.join(model['HOME'], "Data/incidence_rates_" + cancer_rates + ".nml")
+                 this_cancer_rates
                  ],
                 cwd=cwd,
                 stdout=PIPE,
