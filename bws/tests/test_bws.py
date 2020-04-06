@@ -11,6 +11,10 @@ from rest_framework.test import APIClient
 from django.utils.encoding import force_text
 import json
 from django.test.utils import override_settings
+from datetime import date
+from bws.pedigree import Female, BwaPedigree
+from bws.cancer import Cancers, Cancer
+from bws.calcs import Predictions
 
 
 class MutFreqTests(TestCase):
@@ -71,6 +75,65 @@ class MutFreqTests(TestCase):
         self.assertGreater(c80_aj1, c80_aj2)
         self.assertTrue('mutation frequencies set to Ashkenazi Jewish population values for family (XX_AJ) as a ' +
                         'family member has Ashkenazi Jewish status.' in content['warnings'])
+
+    @classmethod
+    def get_risk(cls, crisks, age=80):
+        ''' Return cancer risk to a specified age. '''
+        for c in crisks:
+            if c.get('age') == 80:
+                return c
+        return None
+
+    @classmethod
+    def get_mutation_prob(cls, mutation_probabilties, gene):
+        ''' Return mutation probability for a specified gene. '''
+        for mp in mutation_probabilties:
+            this_gene = list(mp)[0]
+            if this_gene == gene:
+                return mp[this_gene]
+        return None
+
+    def test_custom_mutation_freq(self):
+        ''' For different populations, test CUSTOM mutation frequencies set to:
+        1. same as default (UK) - check gives identical results
+        2. different values to default - check gives different results
+        '''
+        year = date.today().year
+        target = Female("FAM1", "F0", "001", "002", "003", target="1", age="42",
+                        yob=str(year-42), cancers=Cancers())
+        pedigree = BwaPedigree(people=[target])
+        (_father, mother) = pedigree.add_parents(target)
+        mother.yob = str(year-67)
+        mother.age = "67"
+        mother.cancers = Cancers(bc1=Cancer("56"), bc2=Cancer(), oc=Cancer(), prc=Cancer(), pac=Cancer())
+
+        custom_mutation_frequency = settings.BC_MODEL['MUTATION_FREQUENCIES']["UK"].copy()
+        custom_mutation_frequency['BRCA1'] = 0.0012
+        custom_mutation_frequency['BRCA2'] = 0.0015
+
+        calcs1 = Predictions(pedigree)                          # 1. default frequencies
+        calcs2 = Predictions(pedigree, population="Custom")     # 2. custom frequencies same as default
+        calcs3 = Predictions(pedigree, population="Custom",     # 3. custom frequencies different to default
+                             mutation_frequency=custom_mutation_frequency)
+
+        # lifetime risks to age 80
+        bc1 = MutFreqTests.get_risk(calcs1.cancer_risks, age=80)['breast cancer risk']['decimal']
+        bc2 = MutFreqTests.get_risk(calcs2.cancer_risks, age=80)['breast cancer risk']['decimal']
+        bc3 = MutFreqTests.get_risk(calcs3.cancer_risks, age=80)['breast cancer risk']['decimal']
+
+        self.assertEqual(bc1, bc2, "Lifetime risk to 80 same")
+        self.assertNotEqual(bc1, bc3, "Lifetime risk to 80 different")
+
+        # gene mutation probabilities
+        mprob = MutFreqTests.get_mutation_prob
+        for gene in settings.BC_MODEL['GENES']:
+            self.assertEqual(mprob(calcs1.mutation_probabilties, gene)['decimal'],
+                             mprob(calcs2.mutation_probabilties, gene)['decimal'])
+
+        self.assertNotEqual(mprob(calcs1.mutation_probabilties, 'BRCA1')['decimal'],
+                            mprob(calcs3.mutation_probabilties, 'BRCA1')['decimal'])
+        self.assertNotEqual(mprob(calcs1.mutation_probabilties, 'BRCA2')['decimal'],
+                            mprob(calcs3.mutation_probabilties, 'BRCA2')['decimal'])
 
 
 class BwsTests(TestCase):
