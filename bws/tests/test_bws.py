@@ -94,7 +94,7 @@ class MutFreqTests(TestCase):
         return None
 
     def test_custom_mutation_freq(self):
-        ''' For different populations, test CUSTOM mutation frequencies set to:
+        ''' For different populations (UK, Canada), test CUSTOM mutation frequencies set to:
         1. same as default (UK) - check gives identical results
         2. different values to default - check gives different results
         '''
