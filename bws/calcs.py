@@ -384,8 +384,15 @@ class Predictions(object):
 
     @classmethod
     def set_custom_mut_freq(cls, model, cancer_rates, mutation_freq):
-        ''' Create incidence file for custom mutation frequencies, injecting the frequencies into a copy of the
-        incidence rates file for a population/country. '''
+        ''' Create incidence file for custom mutation frequencies, injecting the frequencies into
+        a copy of the incidence rates file for a population/country.
+
+        NOTE:: Country specific frequencies are enabled in two parts of the code:
+        (1) batch file - controls the frequencies used by APRIOR - population frequencies
+        (2) incidence file - controls the frequencies used to perform the incidence constraining
+        The default in (2) are UK frequencies. If a user uses custom frequencies then those should
+        be put in both (1) & (2).
+        '''
         crates_path = os.path.join(model['HOME'], "Data/incidence_rates_" + cancer_rates + ".nml")
         _o, temp_path = tempfile.mkstemp(suffix=".nml", prefix="incidence_rates_" + cancer_rates + ".nml", text=True)
         with open(crates_path, "r") as inf:
