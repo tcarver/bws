@@ -36,6 +36,16 @@ class MutFreqTests(TestCase):
         cls.token.save()
         cls.url = reverse('bws')
 
+        # create pedigree
+        year = date.today().year
+        target = Female("FAM1", "F0", "001", "002", "003", target="1", age="42",
+                        yob=str(year-42), cancers=Cancers())
+        cls.pedigree = BwaPedigree(people=[target])
+        (_father, mother) = cls.pedigree.add_parents(target)
+        mother.yob = str(year-67)
+        mother.age = "67"
+        mother.cancers = Cancers(bc1=Cancer("56"), bc2=Cancer(), oc=Cancer(), prc=Cancer(), pac=Cancer())
+
     def test_ashkn_mut_freq(self):
         '''
         Test POSTing CanRisk file with multiple families with and without Ashkenazi Jewish ancestry.
@@ -98,15 +108,6 @@ class MutFreqTests(TestCase):
         1. same as default (UK) - check gives identical results
         2. different values to default - check gives different results
         '''
-        year = date.today().year
-        target = Female("FAM1", "F0", "001", "002", "003", target="1", age="42",
-                        yob=str(year-42), cancers=Cancers())
-        ped = BwaPedigree(people=[target])
-        (_father, mother) = ped.add_parents(target)
-        mother.yob = str(year-67)
-        mother.age = "67"
-        mother.cancers = Cancers(bc1=Cancer("56"), bc2=Cancer(), oc=Cancer(), prc=Cancer(), pac=Cancer())
-
         custom_mfreqs = settings.BC_MODEL['MUTATION_FREQUENCIES']["UK"].copy()
         custom_mfreqs['BRCA1'] = 0.0012
         custom_mfreqs['BRCA2'] = 0.0015
@@ -114,7 +115,7 @@ class MutFreqTests(TestCase):
         # cancer incidence rates
         cancer_rates = [settings.BC_MODEL['CANCER_RATES'].get("UK"), settings.BC_MODEL['CANCER_RATES'].get("Canada")]
         calcs = ['carrier_probs', 'remaining_lifetime']
-
+        ped = MutFreqTests.pedigree
         for cr in cancer_rates:
             calcs1 = Predictions(ped, cancer_rates=cr, calcs=calcs)     # 1. default frequencies (i.e. UK)
             calcs2 = Predictions(ped, cancer_rates=cr, calcs=calcs,     # 2. custom frequencies same as default
@@ -130,10 +131,6 @@ class MutFreqTests(TestCase):
             self.assertEqual(bc1, bc2, "Lifetime risk to 80 same")
             self.assertNotEqual(bc1, bc3, "Lifetime risk to 80 different")
 
-#             print(bc1)
-#             print(bc2)
-#             print(bc3)
-
             # gene mutation probabilities
             mprob = MutFreqTests.get_mutation_prob
             for gene in settings.BC_MODEL['GENES']:
@@ -144,6 +141,31 @@ class MutFreqTests(TestCase):
                                 mprob(calcs3.mutation_probabilties, 'BRCA1')['decimal'])
             self.assertNotEqual(mprob(calcs1.mutation_probabilties, 'BRCA2')['decimal'],
                                 mprob(calcs3.mutation_probabilties, 'BRCA2')['decimal'])
+
+    def test_custom_mutation_freq_iceland(self):
+        ''' For Iceland populations, test CUSTOM mutation frequencies set to:
+        1. same as default (Iceland) - check gives identical results
+        2. different values to default - check gives different results
+        '''
+        ice_mfreqs = settings.BC_MODEL['MUTATION_FREQUENCIES']["Iceland"].copy()
+        custom_mfreqs = settings.BC_MODEL['MUTATION_FREQUENCIES']["Iceland"].copy()
+        custom_mfreqs['BRCA1'] = 0.0012
+
+        ice_cr = settings.BC_MODEL['CANCER_RATES'].get("Iceland")
+        calcs = ['remaining_lifetime']
+        ped = MutFreqTests.pedigree
+
+        calcs1 = Predictions(ped, cancer_rates=ice_cr, calcs=calcs,     # 1. default frequencies (i.e. Iceland)
+                             mutation_frequency=ice_mfreqs)
+        calcs2 = Predictions(ped, cancer_rates=ice_cr, calcs=calcs,     # 2. custom frequencies same as default
+                             mutation_frequency=ice_mfreqs, population="Custom")
+        calcs3 = Predictions(ped, cancer_rates=ice_cr, calcs=calcs,     # 3. custom frequencies different to default
+                             mutation_frequency=custom_mfreqs, population="Custom")
+        bc1 = MutFreqTests.get_risk(calcs1.cancer_risks, age=80)['breast cancer risk']['decimal']
+        bc2 = MutFreqTests.get_risk(calcs2.cancer_risks, age=80)['breast cancer risk']['decimal']
+        bc3 = MutFreqTests.get_risk(calcs3.cancer_risks, age=80)['breast cancer risk']['decimal']
+        self.assertEqual(bc1, bc2, "Lifetime risk to 80 same")
+        self.assertNotEqual(bc1, bc3, "Lifetime risk to 80 different")
 
 
 class BwsTests(TestCase):
