@@ -412,7 +412,7 @@ class Predictions(object):
                         of.write(line)
         of.close()
         inf.close()
-        logger.debug(temp_path)
+        # logger.debug(temp_path)
         return temp_path
 
     @classmethod
