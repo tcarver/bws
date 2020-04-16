@@ -77,7 +77,10 @@ for bwa in bwalist:
                     line = line.replace("##", "").strip().split("=")
 
                     if line[0].isupper():
-                        name = line[0]
+                        if line[0] == 'TL':
+                            name = 'Tubal_Ligation'
+                        else:
+                            name = line[0]
                     elif line[0] == 'mht_use':
                         name = 'MHT_use'
                     elif line[0] == 'oc_use':
@@ -87,6 +90,8 @@ for bwa in bwalist:
                             rfs['OC_Duration'] = '0'
                     elif line[0] == 'birads':
                         name = 'BIRADS'
+                    elif line[0] == 'endo':
+                        name = 'Endometriosis'
                     else:
                         name = line[0].capitalize()
 
